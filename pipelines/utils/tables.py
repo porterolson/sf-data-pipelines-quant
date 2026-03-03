@@ -205,6 +205,19 @@ class Database:
         )
 
     @property
+    def barra_specific_returns_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_specific_returns",
+            schema={
+                "barrid": pl.String,
+                "specific_return": pl.Float64,
+                "date": pl.Date,
+            },
+            ids=["date", "barrid"],
+        )
+
+    @property
     def exposures_table(self) -> Table:
         return Table(
             database=self._database_name,
