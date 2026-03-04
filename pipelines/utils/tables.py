@@ -403,4 +403,21 @@ class Database:
             },
             ids=['barrid','start_date']
         )
+
+    @property
+    def fama_french_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="fama_french",
+            schema={
+                "date": pl.Date,
+                "mkt_rf": pl.Float64,
+                "smb": pl.Float64,
+                "hml": pl.Float64,
+                "rmw": pl.Float64,
+                "cma": pl.Float64,
+                "rf": pl.Float64,
+            },
+            ids=["date"],
+        )
     

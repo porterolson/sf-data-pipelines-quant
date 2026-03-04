@@ -22,6 +22,7 @@ from pipelines.crsp_events_flow import crsp_events_backfill_flow
 from pipelines.crsp_v2_daily_flow import crsp_v2_daily_backfill_flow
 from pipelines.crsp_v2_monthly_flow import crsp_v2_monthly_backfill_flow
 from pipelines.barra_factors_flow import barra_factors_daily_flow
+from pipelines.fama_french_flow import fama_french_5_factors_flow
 import datetime as dt
 from pipelines.utils.tables import Database
 
