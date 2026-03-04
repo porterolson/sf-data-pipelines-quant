@@ -43,19 +43,4 @@ def barra_assets_daily_flow(database: Database) -> None:
     raw_df = load_current_barra_files()
     clean_df = clean_barra_df(raw_df)
 
-    min_date = clean_df['start_date'].min()
-    max_date = min(clean_df['end_date'].max(), dt.date.today())
-
-    years = list(range(min_date.year, max_date.year + 1))
-
-    for year in tqdm(years, desc="Barra Assets Metadata"):
-        if database.assets_table.exists(year):
-            database.assets_table.update_asof(
-                year=year,
-                right_df=clean_df,
-                left_on='date',
-                right_on='start_date',
-                by='barrid',
-                strategy='backward',
-                drop_right_cols=['start_date', 'end_date']
-            )
+    database.asset_ids_table.overwrite(clean_df)

@@ -1,4 +1,3 @@
-from datetime import date
 import zipfile
 import polars as pl
 from io import BytesIO
@@ -9,7 +8,6 @@ from pipelines.utils import get_last_market_date
 from pipelines.utils.barra_datasets import barra_ids
 from pipelines.utils.tables import Database
 import datetime as dt
-
 
 def load_current_barra_files() -> pl.DataFrame:
     dates = get_last_market_date(n_days=60)
@@ -37,31 +35,13 @@ def clean_barra_df(df: pl.DataFrame) -> pl.DataFrame:
         .with_columns(pl.col("start_date", "end_date").str.strptime(pl.Date, "%Y%m%d"))
         .filter(
             pl.col("barrid").ne("[End of File]"),
-            pl.col("asset_id_type").eq("CUSIP"),
+            pl.col("barrid").str.contains('US')
         )
-        .drop('asset_id_type')
-        .rename({"assetid": "cusip"})
-        .sort(["barrid", "start_date", "end_date"])
+        .sort('barrid', 'start_date', 'end_date')
     )
 
-
-def barra_cusips_daily_flow(database: Database) -> None:
+def barra_asset_ids_daily_flow(database: Database) -> None:
     raw_df = load_current_barra_files()
     clean_df = clean_barra_df(raw_df)
 
-    min_date = clean_df['start_date'].min()
-    max_date = min(clean_df['end_date'].max(), dt.date.today())
-
-    years = list(range(min_date.year, max_date.year + 1))
-
-    for year in tqdm(years, desc="Barra Cusips"):
-        if database.assets_table.exists(year):
-            database.assets_table.update_asof(
-                year=year,
-                right_df=clean_df,
-                left_on='date',
-                right_on='start_date',
-                by='barrid',
-                strategy='backward',
-                drop_right_cols=['start_date', 'end_date']
-            )
+    database.barra_ids_table.overwrite(clean_df)

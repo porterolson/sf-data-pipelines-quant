@@ -7,8 +7,7 @@ from pipelines.barra_exposures_flow import (
     barra_exposures_daily_flow,
     barra_exposures_history_flow,
 )
-from pipelines.barra_cusips_flow import barra_cusips_daily_flow
-from pipelines.barra_tickers_flow import barra_tickers_daily_flow
+from pipelines.barra_asset_ids_flow import barra_asset_ids_daily_flow
 from pipelines.barra_returns_flow import barra_returns_daily_flow, barra_returns_history_flow
 from pipelines.barra_risk_flow import barra_risk_daily_flow, barra_risk_history_flow
 from pipelines.ftse_russell_flow import ftse_russell_backfill_flow
@@ -57,8 +56,7 @@ def barra_history_flow(
 
 
 def id_mappings_flow(database: Database) -> None:
-    barra_tickers_daily_flow(database)
-    barra_cusips_daily_flow(database)
+    barra_asset_ids_daily_flow(database)
     barra_assets_daily_flow(database)
 
 

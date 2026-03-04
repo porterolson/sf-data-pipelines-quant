@@ -12,7 +12,7 @@ barra_columns = {
     "SpecificReturn": "specific_return",
     "DataDate": "date",
     "AssetIDType": "asset_id_type",
-    "AssetID": "assetid",
+    "AssetID": "asset_id",
     "StartDate": "start_date",
     "EndDate": "end_date",
     "Name": "name",
