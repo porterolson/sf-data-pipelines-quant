@@ -386,7 +386,7 @@ class Database:
                 "iso_country_code": pl.String,
                 "iso_currency_code": pl.String,
             },
-            ids=['barrid','start_date']
+            ids=['barrid','start_date', 'rootid', 'end_date']
         )
 
     @property
@@ -401,7 +401,7 @@ class Database:
                 "start_date": pl.Date,
                 "end_date": pl.Date,
             },
-            ids=['barrid','start_date']
+            ids=['barrid','start_date', "asset_id_type", "end_date"]
         )
 
     @property
