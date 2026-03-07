@@ -1,4 +1,4 @@
-from pipelines.barra_assets_flow import barra_assets_daily_flow
+from pipelines.barra_asset_ids_flow import barra_assets_daily_flow
 from pipelines.barra_covariances_flow import (
     barra_covariances_daily_flow,
     barra_covariances_history_flow,
@@ -7,7 +7,7 @@ from pipelines.barra_exposures_flow import (
     barra_exposures_daily_flow,
     barra_exposures_history_flow,
 )
-from pipelines.barra_asset_ids_flow import barra_asset_ids_daily_flow
+from pipelines.barra_ids_flow import barra_asset_ids_daily_flow
 from pipelines.barra_returns_flow import barra_returns_daily_flow, barra_returns_history_flow
 from pipelines.barra_risk_flow import barra_risk_daily_flow, barra_risk_history_flow
 from pipelines.ftse_russell_flow import ftse_russell_backfill_flow

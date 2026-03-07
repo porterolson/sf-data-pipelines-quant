@@ -87,25 +87,36 @@ def ftse_russell_backfill_flow(
 ) -> None:
     """
     Flow for orchestrating FTSE Russell backfill.
-    
+
     Loads all FTSE data at once, computes in_universe fields,
-    then updates files by year.
+    then writes to ftse_russell_table by year.
     """
     # Load all FTSE data for the entire date range
     raw_df = load_ftse_russell_df(start_date=start_date, end_date=end_date, user=user)
     clean_df = clean(raw_df)
-    
+
     # Compute in_universe fields once for all data
     in_universe_fields = get_in_universe_fields(database, clean_df)
-    
-    # Update files by year
+
+    # Write to ftse_russell_table by year
     years = list(range(start_date.year, end_date.year + 1))
-    
-    for year in tqdm(years, desc="Updating FTSE Russell by year"):
+
+    for year in tqdm(years, desc="Writing FTSE Russell by year"):
+        # Delete existing year data (clean slate for backfill)
+        database.ftse_russell_table.delete(year)
+
         # Filter in_universe_fields for the current year
         year_data = in_universe_fields.filter(
             (pl.col("date").dt.year() == year)
         )
-        
-        if database.assets_table.exists(year):
-            database.assets_table.update(year, year_data, on=["date", "barrid"])
+
+        # Write to ftse_russell_table
+        year_data.write_parquet(database.ftse_russell_table._file_path(year))
+
+
+if __name__ == '__main__':
+    from pipelines.utils.enums import DatabaseName
+    start = date(1995, 1, 1)
+    end = date(2025, 12, 31)
+    db = Database(DatabaseName.DEVELOPMENT)
+    ftse_russell_backfill_flow(start, end, db, user="stiten")
