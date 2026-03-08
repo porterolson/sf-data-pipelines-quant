@@ -514,4 +514,18 @@ class Database:
             },
             ids=["date"],
         )
+
+    @property
+    def ftse_russell_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="ftse_russell",
+            schema={
+                "date": pl.Date,
+                "cusip": pl.String,
+                "russell_2000": pl.Boolean,
+                "russell_1000": pl.Boolean,
+            },
+            ids=["date", "cusip"],
+        )
     
