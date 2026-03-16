@@ -61,6 +61,7 @@ def clean_barra_returns(df: pl.DataFrame) -> pl.DataFrame:
         df.rename(barra_columns, strict=False)
         .with_columns(pl.col("date").str.strptime(pl.Date, "%Y%m%d"))
         .filter(pl.col("barrid").ne("[End of File]"))
+        .select(["barrid", "price", "market_cap", "price_source", "currency", "return", "date"])
         .sort(["barrid", "date"])
     )
 
@@ -73,9 +74,8 @@ def barra_returns_history_flow(
     for year in tqdm(years, desc="Barra Returns"):
         raw_df = load_barra_history_files(year)
         clean_df = clean_barra_returns(raw_df)
-
-        database.assets_table.create_if_not_exists(year)
-        database.assets_table.upsert(year, clean_df)
+        database.barra_returns_table.create_if_not_exists(year)
+        database.barra_returns_table.upsert(year, clean_df)
 
 
 def barra_returns_daily_flow(database: Database) -> None:
@@ -89,5 +89,13 @@ def barra_returns_daily_flow(database: Database) -> None:
     for year in tqdm(years, desc="Daily Barra Returns"):
         year_df = clean_df.filter(pl.col("date").dt.year().eq(year))
 
-        database.assets_table.create_if_not_exists(year)
-        database.assets_table.upsert(year, year_df)
+        database.barra_returns_table.create_if_not_exists(year)
+        database.barra_returns_table.upsert(year, year_df)
+
+if __name__ == '__main__':
+    from utils.enums import DatabaseName
+    start = date(1995, 1, 1)
+    end = date(2025, 12, 31)
+    db = Database(DatabaseName.DEVELOPMENT)
+    barra_returns_history_flow(start, end, db)
+    barra_returns_daily_flow(db)

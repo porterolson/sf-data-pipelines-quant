@@ -85,9 +85,8 @@ def barra_volume_history_flow(
     for year in tqdm(years, desc="Barra Volume"):
         raw_df = load_barra_history_files(year)
         clean_df = clean_barra_df(raw_df)
-
-        database.assets_table.create_if_not_exists(year)
-        database.assets_table.update(year, clean_df)
+        database.barra_volume_table.create_if_not_exists(year)
+        database.barra_volume_table.upsert(year, clean_df)
 
 
 def barra_volume_daily_flow(database: Database) -> None:
@@ -101,5 +100,13 @@ def barra_volume_daily_flow(database: Database) -> None:
     for year in tqdm(years, desc="Daily Barra Volume"):
         year_df = clean_df.filter(pl.col("date").dt.year().eq(year))
 
-        database.assets_table.create_if_not_exists(year)
-        database.assets_table.update(year, year_df)
+        database.barra_volume_table.create_if_not_exists(year)
+        database.barra_volume_table.upsert(year, year_df)
+
+if __name__ == '__main__':
+    from utils.enums import DatabaseName
+    start = date(1995, 1, 1)
+    end = date(2025, 12, 31)
+    db = Database(DatabaseName.DEVELOPMENT)
+    barra_volume_history_flow(start, end, db)
+    barra_volume_daily_flow(db)

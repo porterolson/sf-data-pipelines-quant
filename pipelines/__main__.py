@@ -6,6 +6,7 @@ from pipelines.all_pipelines import (
     crsp_backfill_pipeline,
     crsp_v2_backfill_pipeline,
     barra_daily_pipeline,
+    fama_french_5_factors_flow,
 )
 from pipelines.utils.enums import DatabaseName
 from pipelines.utils.tables import Database
@@ -198,7 +199,7 @@ def crsp_v2(pipeline_type, database, start, end):
 )
 def ftse(pipeline_type, database, start, end):
     load_dotenv(override=True)
-    
+
     user = os.getenv("WRDS_USER")
     if user is None:
         raise EnvironmentError(
@@ -217,6 +218,23 @@ def ftse(pipeline_type, database, start, end):
             database_instance = Database(database_name)
 
             ftse_backfill_pipeline(start, end, database_instance, user)
+
+
+@cli.command()
+@click.option(
+    "--database",
+    type=click.Choice(VALID_DATABASES, case_sensitive=False),
+    required=True,
+    help="Target database (research, production, or development).",
+)
+def fama_french(database):
+    click.echo("Running Fama-French 5-factors pipeline...")
+
+    database_name = DatabaseName(database)
+    database_instance = Database(database_name)
+
+    fama_french_5_factors_flow(database_instance)
+    click.echo("Fama-French pipeline completed successfully.")
 
 
 if __name__ == "__main__":

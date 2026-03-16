@@ -43,6 +43,12 @@ class Table:
         else:
             return pl.scan_parquet(self._file_path(year))
 
+    def read_id_file(self) -> pl.LazyFrame:
+        return pl.scan_parquet(f"{self._base_path}/{self._name}/{self._name}.parquet")
+    
+    def overwrite(self, df: pl.DataFrame) -> None:
+        df.write_parquet(f"{self._base_path}/{self._name}/{self._name}.parquet")
+
     def upsert(self, year: int, rows: pl.DataFrame) -> None:
         (
             pl.scan_parquet(self._file_path(year))
@@ -61,6 +67,12 @@ class Table:
             .collect()
             .write_parquet(self._file_path(year))
         )
+
+    def delete(self, year: int) -> None:
+        """Delete parquet file for a specific year."""
+        file_path = self._file_path(year)
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
     def update_asof(
         self,
@@ -158,6 +170,8 @@ class Database:
                 "instrument": pl.String,
                 "name": pl.String,
                 "cusip": pl.String,
+                "isin": pl.String,
+                "cisn": pl.String,
                 "ticker": pl.String,
                 "price": pl.Float64,
                 "return": pl.Float64,
@@ -175,6 +189,73 @@ class Database:
                 "russell_1000": pl.Boolean,
                 "russell_2000": pl.Boolean,
                 "in_universe": pl.Boolean,
+                "daily_volume": pl.Float64,
+                "average_daily_volume_30": pl.Float64,
+                "average_daily_volume_60": pl.Float64,
+                "average_daily_volume_90": pl.Float64,
+                "bid_ask_spread": pl.Float64,
+                "average_daily_bid_ask_spread_30": pl.Float64,
+                "average_daily_bid_ask_spread_60": pl.Float64,
+                "average_daily_bid_ask_spread_90": pl.Float64,
+            },
+            ids=["date", "barrid"],
+        )
+
+    @property
+    def barra_returns_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_returns",
+            schema={
+                "barrid": pl.String,
+                "price": pl.Float64,
+                "market_cap": pl.Float64,
+                "price_source": pl.String,
+                "currency": pl.String,
+                "return": pl.Float64,
+                "date": pl.Date,
+            },
+            ids=["date", "barrid"],
+        )
+
+    @property
+    def barra_specific_returns_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_specific_returns",
+            schema={
+                "barrid": pl.String,
+                "specific_return": pl.Float64,
+                "date": pl.Date,
+            },
+            ids=["date", "barrid"],
+        )
+
+    @property
+    def barra_risk_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_risk",
+            schema={
+                "barrid": pl.String,
+                "yield": pl.Float64,
+                "total_risk": pl.Float64,
+                "specific_risk": pl.Float64,
+                "historical_beta": pl.Float64,
+                "predicted_beta": pl.Float64,
+                "date": pl.Date,
+            },
+            ids=["date", "barrid"],
+        )
+
+    @property
+    def barra_volume_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_volume",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
                 "daily_volume": pl.Float64,
                 "average_daily_volume_30": pl.Float64,
                 "average_daily_volume_60": pl.Float64,
@@ -366,3 +447,69 @@ class Database:
             },
             ids=["date", "barrid", "name"],
         )
+
+    @property
+    def asset_ids_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name ="asset_ids",
+            schema={
+                "start_date": pl.Date,
+                "end_date": pl.Date,
+                "rootid": pl.String,
+                "barrid": pl.String,
+                "issuerid": pl.String,
+                "instrument": pl.String,
+                "name": pl.String,
+                "iso_country_code": pl.String,
+                "iso_currency_code": pl.String,
+            },
+            ids=['barrid','start_date', 'rootid', 'end_date']
+        )
+
+    @property
+    def barra_ids_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="barra_ids",
+            schema={
+                "barrid": pl.String,
+                "asset_id_type": pl.String,
+                "asset_id": pl.String,
+                "start_date": pl.Date,
+                "end_date": pl.Date,
+            },
+            ids=['barrid','start_date', "asset_id_type", "end_date"]
+        )
+
+    @property
+    def fama_french_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="fama_french",
+            schema={
+                "date": pl.Date,
+                "mkt_rf": pl.Float64,
+                "smb": pl.Float64,
+                "hml": pl.Float64,
+                "rmw": pl.Float64,
+                "cma": pl.Float64,
+                "rf": pl.Float64,
+            },
+            ids=["date"],
+        )
+
+    @property
+    def ftse_russell_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="ftse_russell",
+            schema={
+                "date": pl.Date,
+                "cusip": pl.String,
+                "russell_2000": pl.Boolean,
+                "russell_1000": pl.Boolean,
+            },
+            ids=["date", "cusip"],
+        )
+    
