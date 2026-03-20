@@ -1,5 +1,11 @@
 import polars as pl
 
-path = "/home/amh1124/groups/grp_quant/database/development/ftse_russell/*.parquet"
-
-print(pl.read_parquet(path))
+score_path = "/home/stiten/groups/grp_quant/database/development/scores/scores.parquet"
+signal_path = "/home/stiten/groups/grp_quant/database/development/signals/signals.parquet"
+alpha_path = "/home/stiten/groups/grp_quant/database/development/alphas/alphas.parquet"
+print("signal")
+print(pl.read_parquet(signal_path).sort(['date', 'barrid']))
+print("scores")
+print(pl.read_parquet(score_path).sort(['date', 'barrid']))
+print("alphas")
+print(pl.read_parquet(alpha_path).sort(['date', 'barrid']))

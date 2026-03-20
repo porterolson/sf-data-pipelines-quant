@@ -407,48 +407,6 @@ class Database:
         )
 
     @property
-    def signals_table(self) -> Table:
-        return Table(
-            database=self._database_name,
-            name="signals",
-            schema={
-                "date": pl.Date,
-                "barrid": pl.String,
-                "signal_name": pl.String,
-                "signal_value": pl.Float64,
-            },
-            ids=["date", "barrid", "signal_name"],
-        )
-
-    @property
-    def active_weights_table(self) -> Table:
-        return Table(
-            database=self._database_name,
-            name="active_weights",
-            schema={
-                "date": pl.Date,
-                "barrid": pl.String,
-                "signal": pl.String,
-                "weight": pl.Float64,
-            },
-            ids=["date", "barrid", "signal"],
-        )
-
-    @property
-    def composite_alphas_table(self) -> Table:
-        return Table(
-            database=self._database_name,
-            name="composite_alphas",
-            schema={
-                "date": pl.Date,
-                "barrid": pl.String,
-                "name": pl.String,
-                "alpha": pl.Float64,
-            },
-            ids=["date", "barrid", "name"],
-        )
-
-    @property
     def asset_ids_table(self) -> Table:
         return Table(
             database=self._database_name,
@@ -511,5 +469,77 @@ class Database:
                 "russell_1000": pl.Boolean,
             },
             ids=["date", "cusip"],
+        )
+    
+
+    @property
+    def signals_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="signals",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
+                "signal_name": pl.String,
+                "signal_value": pl.Float64,
+            },
+            ids=["date", "barrid", "signal_name"],
+        )
+    
+    @property
+    def scores_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="scores",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
+                "signal_name": pl.String,
+                "score": pl.Float64,
+            },
+            ids=["date", "barrid", "signal_name"],
+        )
+    
+
+    @property
+    def alpha_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="alphas",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
+                "signal_name": pl.String,
+                "alpha": pl.Float64,
+            },
+            ids=["date", "barrid", "signal_name"],
+        )
+
+    @property
+    def active_weights_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="active_weights",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
+                "signal": pl.String,
+                "weight": pl.Float64,
+            },
+            ids=["date", "barrid", "signal"],
+        )
+
+    @property
+    def composite_alphas_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="composite_alphas",
+            schema={
+                "date": pl.Date,
+                "barrid": pl.String,
+                "name": pl.String,
+                "alpha": pl.Float64,
+            },
+            ids=["date", "barrid", "name"],
         )
     
