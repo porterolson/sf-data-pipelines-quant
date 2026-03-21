@@ -266,15 +266,17 @@ def fama_french(database):
     help="End date (YYYY-MM-DD).",
 )
 def signals(pipeline_type, database, start, end):
-    start = start.date() if hasattr(start, "date") else start
-    end = end.date() if hasattr(end, "date") else end
+    match pipeline_type:
+        case "backfill":
+            start = start.date() if hasattr(start, "date") else start
+            end = end.date() if hasattr(end, "date") else end
 
-    click.echo(f"Running signals backfill on '{database}' from {start} to {end}...")
+            click.echo(f"Running signals backfill on '{database}' from {start} to {end}...")
 
-    database_name = DatabaseName(database)
-    database_instance = Database(database_name)
+            database_name = DatabaseName(database)
+            database_instance = Database(database_name)
 
-    signals_flow(start, end, database_instance)
+            signals_flow(start, end, database_instance)
 
 
 if __name__ == "__main__":
