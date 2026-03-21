@@ -19,20 +19,35 @@ def signals_flow(start_date: date, end_date: date, database: Database) -> None:
     5. Write single parquet file per table (all years)
     """
 
-    # Step 1: Lazy scan assets_table
+    # Lazy scan assets_table
     assets_lazy = database.assets_table.read()
 
-    # Step 2: Filter and select needed columns
-    needed_cols = assets_lazy.select([
-        "date",
-        "barrid",
-        "return",
-        "predicted_beta",
-        "specific_risk",
-        "in_universe"
-    ]).filter(pl.col("in_universe") == True)
+    # Filter and select needed columns
+    needed_cols = (
+        assets_lazy
+        .select([
+            "date",
+            "barrid",
+            "ticker",
+            "price",
+            "return",
+            "specific_return",
+            "specific_risk",
+            "predicted_beta",
+            "daily_volume",
+            "in_universe"
+        ])
+        .filter(
+            pl.col("in_universe") == True
+        )
+        .with_columns(
+            pl.col("return").truediv(100),
+            pl.col("specific_return").truediv(100),
+            pl.col("specific_risk").truediv(100),
+        )
+    )
 
-    # Step 3: Collect eagerly (rolling windows need full history in memory)
+    # Collect eagerly (rolling windows need full history in memory)
     assets_df = needed_cols.collect().sort(["barrid", "date"])
 
     # Lists to accumulate results for each table
@@ -40,60 +55,50 @@ def signals_flow(start_date: date, end_date: date, database: Database) -> None:
     scores_rows = []
     alphas_rows = []
 
-    # Step 4: Compute each signal
+    # Compute each signal
     for signal_name, signal_config in SIGNALS.items():
-        # Add signal column
-        df_with_signal = assets_df.with_columns(signal_config["expr"])
-
-        # Extract signal value (the expr has .alias(signal_name))
-        signal_data = df_with_signal.select([
-            "date",
-            "barrid",
-            pl.col(signal_name).alias("signal_value"),
-            "specific_risk"
-        ]).drop_nulls("signal_value")
-
-        # Build signals_table rows
-        signals_row = signal_data.select([
+        signal_df = (
+            assets_df
+            .with_columns(signal_config["expr"])
+            .with_columns(pl.col(signal_name).alias("signal_value"))
+        ).filter(
+                pl.col(signal_name).is_not_null(),
+                pl.col("predicted_beta").is_not_null(),
+                pl.col("specific_risk").is_not_null(),
+            )
+        signals_rows.append(signal_df.select([
             "date",
             "barrid",
             pl.lit(signal_name).alias("signal_name"),
             "signal_value"
-        ])
-        signals_rows.append(signals_row)
-
+        ]))
+        
         # Compute score using signal-specific scorer
         scorer = signal_config["scorer"]
-        score_data = scorer(signal_data)
-
-        # Build scores_table rows
-        scores_row = score_data.select([
+        score_df = scorer(signal_df)
+        scores_rows.append(score_df.select([
             "date",
             "barrid",
             pl.lit(signal_name).alias("signal_name"),
             "score"
-        ])
-        scores_rows.append(scores_row)
+        ]))
 
         # Compute alpha using signal-specific alphatizer
         alphatizer = signal_config["alphatizer"]
-        alpha_data = alphatizer(score_data)
-
-        # Build alphas_table rows
-        alphas_row = alpha_data.select([
+        alpha_df = alphatizer(score_df)
+        alphas_rows.append(alpha_df.select([
             "date",
             "barrid",
             pl.lit(signal_name).alias("signal_name"),
             "alpha"
-        ])
-        alphas_rows.append(alphas_row)
+        ]))
 
     # Concatenate all rows for each table
     signals_df = pl.concat(signals_rows)
     scores_df = pl.concat(scores_rows)
     alphas_df = pl.concat(alphas_rows)
 
-    # Step 5: Write single file per table (all years)
+    # Write single file per table (all years)
     database.signals_table.overwrite(signals_df)
     database.scores_table.overwrite(scores_df)
     database.alpha_table.overwrite(alphas_df)
