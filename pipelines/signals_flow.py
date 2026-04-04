@@ -52,12 +52,8 @@ def signals_flow(start_date: date, end_date: date, database: Database) -> None:
     )
 
     # Collect eagerly (rolling windows need full history in memory)
-    assets_df = (
-        needed_cols
-        .collect()
-        .unique(subset=["date", "barrid"], keep="last")
-        .sort(["barrid", "date"])
-    )
+    assets_df = needed_cols.collect().sort(["barrid", "date"])
+
 
     try:
         ten_k_df = (

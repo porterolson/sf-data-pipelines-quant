@@ -154,13 +154,13 @@ def barra_momentum() -> dict:
 
 def ivol() -> dict:
     return {
-                "expr": (
-                pl.col("specific_risk")
-                .mul(-1)
-                .shift(1)
-                .over("barrid")
-                .alias("ivol")
-            ),
+        "expr": (
+            pl.col("specific_risk")
+            .mul(-1)
+            .shift(1)
+            .over("barrid")
+            .alias("ivol")
+        ),
         "scorer": zscore_scorer,
         "alphatizer": ic_alphatizer,
     }

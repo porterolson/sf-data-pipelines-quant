@@ -500,8 +500,22 @@ class Database:
             database=self._database_name,
             name="ftse_russell",
             schema={
-                # FTSE Russell is the benchmark membership source used for both
-                # the research universe and the CUSIP -> CIK bridge into EDGAR.
+                # FTSE Russell stores benchmark membership only.
+                "date": pl.Date,
+                "cusip": pl.String,
+                "russell_2000": pl.Boolean,
+                "russell_1000": pl.Boolean,
+            },
+            ids=["date", "cusip"],
+        )
+    
+    @property
+    def compustat_cik_table(self) -> Table:
+        return Table(
+            database=self._database_name,
+            name="compustat_cik",
+            schema={
+                # Separate dated FTSE Russell + CIK table used by the 10-K flow.
                 "date": pl.Date,
                 "cusip": pl.String,
                 "russell_2000": pl.Boolean,

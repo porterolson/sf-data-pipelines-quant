@@ -124,16 +124,16 @@ def _latest_filing(company: Company, start_date: date, end_date: date):
 def load_ftse_cik_df(
     database: Database, start_date: date, end_date: date
 ) -> pl.DataFrame:
-    # The 10-K universe is sourced from FTSE Russell membership rather than the
-    # final assets table so we can reuse the same benchmark-driven CUSIP/CIK map
-    # across the filing pipeline.
+    # The 10-K universe is sourced from the dated FTSE Russell + CIK table so
+    # benchmark membership and EDGAR identifiers stay in one place.
     return (
-        database.ftse_russell_table.read()
+        database.compustat_cik_table.read()
         .filter(
             pl.col("date").is_between(start_date, end_date),
             pl.col("russell_1000").fill_null(False) | pl.col("russell_2000").fill_null(False),
         )
         .collect()
+        .with_columns(pl.col("cusip").str.slice(0, 8).alias("cusip"))
     )
 
 
@@ -163,7 +163,8 @@ def load_all_existing_ten_k_filings_df(database: Database) -> pl.DataFrame:
     _normalize_all_existing_ten_k_files(database)
 
     try:
-        return database.ten_k_filings_table.read().collect()
+        df = database.ten_k_filings_table.read().collect()
+        return _normalize_existing_ten_k_df(database, df, year=None)
     except Exception:
         return pl.DataFrame(
             schema={
@@ -195,7 +196,11 @@ def _normalize_existing_ten_k_df(
     if missing_columns:
         df = df.with_columns([pl.lit(None).alias(col) for col in missing_columns])
 
-    df = df.select(TEN_K_FILE_COLUMNS)
+    df = (
+        df
+        .with_columns(pl.col("cusip").cast(pl.String).str.slice(0, 8).alias("cusip"))
+        .select(TEN_K_FILE_COLUMNS)
+    )
 
     if year is not None and "report_date" in columns:
         df.write_parquet(database.ten_k_filings_table._file_path(year))
@@ -230,7 +235,7 @@ def _trading_day_cutoff(current_date: date, lookback_days: int) -> date:
 
 def load_today_ftse_cik_df(database: Database, current_date: date) -> pl.DataFrame:
     latest_ftse_date = (
-        database.ftse_russell_table.read()
+        database.compustat_cik_table.read()
         .filter(pl.col("date").le(current_date))
         .select(pl.col("date").max().alias("latest_date"))
         .collect()
@@ -248,16 +253,17 @@ def load_today_ftse_cik_df(database: Database, current_date: date) -> pl.DataFra
             }
         )
 
-    # Daily update mode uses the newest FTSE Russell holdings snapshot available
-    # on or before today so the candidate universe reflects the latest benchmark
-    # membership without requiring an exact-date FTSE file.
+    # Daily update mode uses the newest dated CIK snapshot available on or
+    # before today so the candidate universe reflects the latest benchmark
+    # membership and identifier mapping without an exact-date file requirement.
     return (
-        database.ftse_russell_table.read()
+        database.compustat_cik_table.read()
         .filter(
             pl.col("date").eq(latest_ftse_date),
             pl.col("russell_1000").fill_null(False) | pl.col("russell_2000").fill_null(False),
         )
         .collect()
+        .with_columns(pl.col("cusip").str.slice(0, 8).alias("cusip"))
     )
 
 
@@ -365,8 +371,11 @@ def _daily_update_candidate_df(database: Database, current_date: date) -> pl.Dat
         load_today_ftse_cik_df(database, current_date)
         .with_columns(pl.col("cik").map_elements(_normalize_cik, return_dtype=pl.String))
         .filter(pl.col("cik").is_not_null())
-        .sort(["cusip", "date"])
-        .unique(subset=["cusip", "cik"], keep="last")
+        .sort(["cusip", "date", "cik"])
+        # Daily refresh mode should reason about the current Russell universe at
+        # the security/CUSIP level, not every possible CIK variant that might
+        # exist for the same issuer in Compustat.
+        .unique(subset=["cusip"], keep="last")
         .select("cusip", "cik")
         .sort(["cusip", "cik"])
     )
@@ -377,9 +386,9 @@ def _daily_update_candidate_df(database: Database, current_date: date) -> pl.Dat
     latest_existing_df = (
         load_all_existing_ten_k_filings_df(database)
         .filter(pl.col("filing_date").is_not_null())
-        .sort(["cusip", "cik", "filing_date"])
-        .unique(subset=["cusip", "cik"], keep="last")
-        .select(["cusip", "cik", "filing_date"])
+        .sort(["cusip", "filing_date"])
+        .unique(subset=["cusip"], keep="last")
+        .select(["cusip", "filing_date"])
         .rename({"filing_date": "last_filing_date"})
     )
 
@@ -387,7 +396,7 @@ def _daily_update_candidate_df(database: Database, current_date: date) -> pl.Dat
     # 245 trading days old, or that have never been stored at all.
     return (
         cik_df
-        .join(latest_existing_df, on=["cusip", "cik"], how="left")
+        .join(latest_existing_df, on="cusip", how="left")
         .filter(
             pl.col("last_filing_date").is_null()
             | pl.col("last_filing_date").le(cutoff_date)

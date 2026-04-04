@@ -3,6 +3,7 @@ import datetime as dt
 from pipelines.all_pipelines import (
     barra_backfill_pipeline,
     ftse_backfill_pipeline,
+    compustat_cik_backfill_pipeline,
     crsp_backfill_pipeline,
     crsp_v2_backfill_pipeline,
     barra_daily_pipeline,
@@ -220,6 +221,58 @@ def ftse(pipeline_type, database, start, end):
             database_instance = Database(database_name)
 
             ftse_backfill_pipeline(start, end, database_instance, user)
+
+
+@cli.command(name="compustat-cik")
+@click.argument(
+    "pipeline_type",
+    type=click.Choice(
+        ["backfill"], case_sensitive=False
+    ),
+)
+@click.option(
+    "--database",
+    type=click.Choice(VALID_DATABASES, case_sensitive=False),
+    required=True,
+    help="Target database (research or database).",
+)
+@click.option(
+    "--start",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=str(dt.date(1995, 7, 31)),
+    show_default=True,
+    help="Start date (YYYY-MM-DD).",
+)
+@click.option(
+    "--end",
+    type=click.DateTime(formats=["%Y-%m-%d"]),
+    default=str(dt.date.today()),
+    show_default=True,
+    help="End date (YYYY-MM-DD).",
+)
+def compustat_cik(pipeline_type, database, start, end):
+    load_dotenv(override=True)
+
+    user = os.getenv("WRDS_USER")
+    if user is None:
+        raise EnvironmentError(
+            "Missing required environment variable: WRDS_USER. "
+            "Check your .env file."
+        )
+
+    match pipeline_type:
+        case "backfill":
+            start = start.date() if hasattr(start, "date") else start
+            end = end.date() if hasattr(end, "date") else end
+
+            click.echo(
+                f"Running compustat-cik backfill on '{database}' from {start} to {end}."
+            )
+
+            database_name = DatabaseName(database)
+            database_instance = Database(database_name)
+
+            compustat_cik_backfill_pipeline(start, end, database_instance)
 
 
 @cli.command()
