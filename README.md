@@ -10,6 +10,7 @@ uv sync
 2. Add a .env file in the root of your working directory with the following environment variables
 - ROOT: The path to your home directory
 - WRDS_USER: The username to your WRDS account
+- SEC_IDENTITY: Your email address for accessing SEC filings (any will work)
 
 ## Running pipelines
 1. Activate Python virtual environment
