@@ -1,10 +1,8 @@
 from datetime import date
-
 import numpy as np
 import polars as pl
 from scipy.special import rel_entr
 from sklearn.feature_extraction.text import CountVectorizer
-
 from pipelines.signals import zscore_scorer
 from pipelines.signal_output_utils import load_signal_assets_df, write_signal_subset_outputs
 from pipelines.utils.tables import Database
@@ -248,7 +246,6 @@ def build_ten_k_signal_outputs(
                 # event alpha for 245 trading days; we do not recompute the alpha
                 # daily once the filing-date signal has been formed.
                 pl.col("alpha")
-                .shift(1)
                 .forward_fill(limit=TEN_K_HOLDING_DAYS)
                 .over("barrid")
                 .alias("alpha")

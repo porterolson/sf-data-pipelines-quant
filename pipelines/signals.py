@@ -150,13 +150,7 @@ def ivol() -> dict:
 
 
 def ten_k_similarity() -> dict:
-    """
-    Generic 10-K signal definition.
 
-    The heavy filing-text preparation, event-date scoring, and forward-filled
-    alpha construction live in the dedicated 10-K flow; this config just keeps
-    the signal name/expression available alongside the rest of the registry.
-    """
     return {
         "expr": pl.col("ten_k_similarity_value").alias("ten_k_similarity"),
         "scorer": zscore_scorer,

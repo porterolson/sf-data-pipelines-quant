@@ -1,375 +1,28 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
-from glob import glob
 import os
-import time
-
-from edgar import Company, set_identity
+from edgar import set_identity
 import polars as pl
-from tqdm import tqdm
 
-from pipelines.utils import get_last_market_date
+from pipelines.utils.ten_k_utils import (
+    TEN_K_RECHECK_TRADING_DAYS,
+    fetch_filings_for_rows,
+    load_all_existing_ten_k_filings_df,
+    load_existing_ten_k_filings_df,
+    load_ftse_cik_df,
+    load_today_ftse_cik_df,
+    normalize_all_existing_ten_k_files,
+    normalize_cik,
+    year_bounds,
+    trading_day_cutoff,
+)
 from pipelines.utils.tables import Database
 
-MAX_WORKERS = 4
-SLEEP_BETWEEN = 0.2
-TEN_K_RECHECK_TRADING_DAYS = 245
-TEN_K_FILE_COLUMNS = [
-    "year",
-    "cusip",
-    "cik",
-    "form",
-    "filing_date",
-    "acceptance_datetime",
-    "accession_number",
-    "filing_url",
-    "item_1a",
-]
-
-
-def _normalize_cik(cik: str | None) -> str | None:
-    if cik is None:
-        return None
-
-    cik = str(cik).strip()
-    return cik.zfill(10) if cik else None
-
-
-def _safe_attr(obj, *names: str):
-    for name in names:
-        value = getattr(obj, name, None)
-        if value is not None:
-            return value
-
-    return None
-
-
-def _safe_item(obj, key: str) -> str | None:
-    try:
-        value = obj[key]
-    except Exception:
-        return None
-
-    if value is None:
-        return None
-
-    value = str(value).strip()
-    return value or None
-
-
-def _normalize_date(value) -> date | None:
-    if value is None:
-        return None
-
-    if isinstance(value, date):
-        return value
-
-    value = str(value).strip()
-    if not value:
-        return None
-
-    return date.fromisoformat(value[:10])
-
-
-def _normalize_datetime(value) -> str | None:
-    if value is None:
-        return None
-
-    if hasattr(value, "isoformat"):
-        return value.isoformat()
-
-    value = str(value).strip()
-    return value or None
-
-
-def _latest_filing(company: Company, start_date: date, end_date: date):
-    filings = company.get_filings(form="10-K")
-
-    if filings is None:
-        return None
-
-    try:
-        filings = filings.filter(date=f"{start_date}:{end_date}")
-    except Exception:
-        pass
-
-    try:
-        if len(filings) == 0:
-            return None
-    except TypeError:
-        pass
-
-    latest = None
-
-    try:
-        latest = filings[0]
-    except Exception:
-        try:
-            latest = filings.latest()
-        except Exception:
-            return None
-
-    if latest is None:
-        return None
-
-    try:
-        if not hasattr(latest, "form") and len(latest) > 0:
-            latest = latest[0]
-    except Exception:
-        pass
-
-    return latest
-
-
-def load_ftse_cik_df(
-    database: Database, start_date: date, end_date: date
-) -> pl.DataFrame:
-    # The 10-K universe is sourced from the dated FTSE Russell + CIK table so
-    # benchmark membership and EDGAR identifiers stay in one place.
-    return (
-        database.compustat_cik_table.read()
-        .filter(
-            pl.col("date").is_between(start_date, end_date),
-            pl.col("russell_1000").fill_null(False) | pl.col("russell_2000").fill_null(False),
-        )
-        .collect()
-        .with_columns(pl.col("cusip").str.slice(0, 8).alias("cusip"))
-    )
-
-
-def load_existing_ten_k_filings_df(database: Database, year: int) -> pl.DataFrame:
-    try:
-        df = database.ten_k_filings_table.read(year).collect()
-        return _normalize_existing_ten_k_df(database, df, year=year)
-    except Exception:
-        # Backfills are incremental by year, so missing parquet files should
-        # behave like an empty historical result set rather than raising.
-        return pl.DataFrame(
-            schema={
-                "year": pl.Int64,
-                "cusip": pl.String,
-                "cik": pl.String,
-                "form": pl.String,
-                "filing_date": pl.Date,
-                "acceptance_datetime": pl.String,
-                "accession_number": pl.String,
-                "filing_url": pl.String,
-                "item_1a": pl.String,
-            }
-        )
-
-
-def load_all_existing_ten_k_filings_df(database: Database) -> pl.DataFrame:
-    _normalize_all_existing_ten_k_files(database)
-
-    try:
-        df = database.ten_k_filings_table.read().collect()
-        return _normalize_existing_ten_k_df(database, df, year=None)
-    except Exception:
-        return pl.DataFrame(
-            schema={
-                "year": pl.Int64,
-                "cusip": pl.String,
-                "cik": pl.String,
-                "form": pl.String,
-                "filing_date": pl.Date,
-                "acceptance_datetime": pl.String,
-                "accession_number": pl.String,
-                "filing_url": pl.String,
-                "item_1a": pl.String,
-            }
-        )
-
-
-def _normalize_existing_ten_k_df(
-    database: Database, df: pl.DataFrame, year: int | None = None
-) -> pl.DataFrame:
-    columns = set(df.columns)
-
-    # Older yearly parquet files may still carry the legacy report_date field.
-    # Normalize those files in place so the checked-in schema only depends on
-    # filing_date going forward.
-    if "report_date" in columns:
-        df = df.drop("report_date")
-
-    missing_columns = [col for col in TEN_K_FILE_COLUMNS if col not in df.columns]
-    if missing_columns:
-        df = df.with_columns([pl.lit(None).alias(col) for col in missing_columns])
-
-    df = (
-        df
-        .with_columns(pl.col("cusip").cast(pl.String).str.slice(0, 8).alias("cusip"))
-        .select(TEN_K_FILE_COLUMNS)
-    )
-
-    if year is not None and "report_date" in columns:
-        df.write_parquet(database.ten_k_filings_table._file_path(year))
-
-    return df
-
-
-def _normalize_all_existing_ten_k_files(database: Database) -> None:
-    table = database.ten_k_filings_table
-    pattern = os.path.join(table._base_path, table._name, f"{table._name}_*.parquet")
-
-    for file_path in glob(pattern):
-        df = pl.read_parquet(file_path)
-        if "report_date" not in df.columns:
-            continue
-
-        year = int(os.path.splitext(os.path.basename(file_path))[0].rsplit("_", 1)[1])
-        normalized_df = _normalize_existing_ten_k_df(database, df, year=None)
-        normalized_df.write_parquet(table._file_path(year))
-
-
-def _trading_day_cutoff(current_date: date, lookback_days: int) -> date:
-    previous_market_dates = [
-        d for d in get_last_market_date(current_date=current_date, n_days=lookback_days) if d is not None
-    ]
-
-    if not previous_market_dates:
-        return current_date
-
-    return previous_market_dates[0]
-
-
-def load_today_ftse_cik_df(database: Database, current_date: date) -> pl.DataFrame:
-    latest_ftse_date = (
-        database.compustat_cik_table.read()
-        .filter(pl.col("date").le(current_date))
-        .select(pl.col("date").max().alias("latest_date"))
-        .collect()
-        .item()
-    )
-
-    if latest_ftse_date is None:
-        return pl.DataFrame(
-            schema={
-                "date": pl.Date,
-                "cusip": pl.String,
-                "russell_2000": pl.Boolean,
-                "russell_1000": pl.Boolean,
-                "cik": pl.String,
-            }
-        )
-
-    # Daily update mode uses the newest dated CIK snapshot available on or
-    # before today so the candidate universe reflects the latest benchmark
-    # membership and identifier mapping without an exact-date file requirement.
-    return (
-        database.compustat_cik_table.read()
-        .filter(
-            pl.col("date").eq(latest_ftse_date),
-            pl.col("russell_1000").fill_null(False) | pl.col("russell_2000").fill_null(False),
-        )
-        .collect()
-        .with_columns(pl.col("cusip").str.slice(0, 8).alias("cusip"))
-    )
-
-
-def _fetch_latest_ten_k_filing(
-    row: dict[str, str | None], start_date: date, end_date: date, year: int | None = None
-) -> dict[str, object]:
-    # Keep the output schema stable even when EDGAR returns nothing for a name.
-    result = {
-        "year": year,
-        "cusip": row["cusip"],
-        "cik": row["cik"],
-        "form": None,
-        "filing_date": None,
-        "acceptance_datetime": None,
-        "accession_number": None,
-        "filing_url": None,
-        "item_1a": None,
-    }
-
-    cik = _normalize_cik(row["cik"])
-    if cik is None:
-        return result
-
-    try:
-        time.sleep(SLEEP_BETWEEN)
-        company = Company(cik)
-        filing = _latest_filing(company, start_date, end_date)
-
-        if filing is None:
-            return result
-
-        filing_obj = None
-        try:
-            filing_obj = filing.obj()
-        except Exception:
-            filing_obj = None
-
-        result.update(
-            {
-                "form": _safe_attr(filing, "form"),
-                "filing_date": _normalize_date(_safe_attr(filing, "filing_date")),
-                "acceptance_datetime": _normalize_datetime(
-                    _safe_attr(filing, "acceptance_datetime")
-                ),
-                "accession_number": _safe_attr(
-                    filing,
-                    "accession_number",
-                    "accession_no",
-                ),
-                "filing_url": _safe_attr(
-                    filing,
-                    "filing_url",
-                    "homepage_url",
-                    "url",
-                    "link",
-                ),
-                "item_1a": _safe_item(filing_obj, "Item 1A") if filing_obj is not None else None,
-                #can add other items if wanted/needed
-            }
-        )
-        if result["year"] is None and result["filing_date"] is not None:
-            result["year"] = result["filing_date"].year
-    except Exception:
-        return result
-
-    return result
-
-
-def _year_bounds(year: int, start_date: date, end_date: date) -> tuple[date, date]:
-    year_start = date(year, 1, 1)
-    year_end = date(year, 12, 31)
-
-    return max(start_date, year_start), min(end_date, year_end)
-
-
-def _fetch_filings_for_rows(
-    rows: list[dict[str, object]],
-    start_date: date,
-    end_date: date,
-    year: int | None = None,
-    desc: str | None = None,
-) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [
-            executor.submit(_fetch_latest_ten_k_filing, row, start_date, end_date, year)
-            for row in rows
-        ]
-
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc=desc,
-        ):
-            results.append(future.result())
-
-    return results
-
-
 def _daily_update_candidate_df(database: Database, current_date: date) -> pl.DataFrame:
-    cutoff_date = _trading_day_cutoff(current_date, TEN_K_RECHECK_TRADING_DAYS)
+    cutoff_date = trading_day_cutoff(current_date, TEN_K_RECHECK_TRADING_DAYS)
 
     cik_df = (
         load_today_ftse_cik_df(database, current_date)
-        .with_columns(pl.col("cik").map_elements(_normalize_cik, return_dtype=pl.String))
+        .with_columns(pl.col("cik").map_elements(normalize_cik, return_dtype=pl.String))
         .filter(pl.col("cik").is_not_null())
         .sort(["cusip", "date", "cik"])
         # Daily refresh mode should reason about the current Russell universe at
@@ -404,7 +57,7 @@ def _daily_update_candidate_df(database: Database, current_date: date) -> pl.Dat
     )
 
 
-def ten_k_filings_today_flow(current_date: date, database: Database) -> None:
+def ten_k_filings_daily_flow(current_date: date, database: Database) -> None:
     candidate_df = _daily_update_candidate_df(database, current_date)
 
     if candidate_df.is_empty():
@@ -412,7 +65,7 @@ def ten_k_filings_today_flow(current_date: date, database: Database) -> None:
 
     lookback_start = date(current_date.year - 2, 1, 1)
     rows = candidate_df.select("cusip", "cik").to_dicts()
-    results = _fetch_filings_for_rows(
+    results = fetch_filings_for_rows(
         rows,
         start_date=lookback_start,
         end_date=current_date,
@@ -446,20 +99,20 @@ def ten_k_filings_flow(
         )
 
     set_identity(identity)
-    _normalize_all_existing_ten_k_files(database)
+    normalize_all_existing_ten_k_files(database)
 
     if today_mode:
-        ten_k_filings_today_flow(end_date, database)
+        ten_k_filings_daily_flow(end_date, database)
         return
 
     years = list(range(start_date.year, end_date.year + 1))
 
     for year in years:
-        year_start, year_end = _year_bounds(year, start_date, end_date)
+        year_start, year_end = year_bounds(year, start_date, end_date)
 
         cik_df = (
             load_ftse_cik_df(database, year_start, year_end)
-            .with_columns(pl.col("cik").map_elements(_normalize_cik, return_dtype=pl.String))
+            .with_columns(pl.col("cik").map_elements(normalize_cik, return_dtype=pl.String))
             .filter(pl.col("cik").is_not_null())
             .sort(["cusip", "date"])
             # Deduplicate to the latest Russell membership observation for each
@@ -487,7 +140,7 @@ def ten_k_filings_flow(
             continue
 
         rows = cik_df.to_dicts()
-        results = _fetch_filings_for_rows(
+        results = fetch_filings_for_rows(
             rows,
             start_date=year_start,
             end_date=year_end,
