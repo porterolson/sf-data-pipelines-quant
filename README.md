@@ -58,7 +58,7 @@ Start date for backfills
 End date for backfilss
 - format: YYYY-MM-DD
 
-### example usage for Barra data
+### Example usage for Barra data
 1. Run the following to backfill or update barra data
 
 ```bash
