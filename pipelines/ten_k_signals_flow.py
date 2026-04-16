@@ -1,28 +1,13 @@
 from datetime import date
-import numpy as np
 import polars as pl
-from scipy.special import rel_entr
-from sklearn.feature_extraction.text import CountVectorizer
-from pipelines.signals import zscore_scorer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from pipelines.signals import ic_alphatizer, zscore_scorer
 from pipelines.signal_output_utils import load_signal_assets_df, write_signal_subset_outputs
 from pipelines.utils.tables import Database
 
 TEN_K_SIGNAL_NAME = "ten_k_similarity"
 TEN_K_HOLDING_DAYS = 245
-
-
-def ten_k_alphatizer(df: pl.DataFrame, ic: float = 0.05) -> pl.DataFrame:
-    """Match the legacy 10-K alpha construction on the filing event date."""
-    return df.with_columns(
-        pl.col("score")
-        .mul(ic)
-        # The 10-K signal is formed on the filing date, scaled once by that
-        # day's specific risk, and then forward-filled later.
-        .mul(pl.col("specific_risk"))
-        # Higher KL means less similar language, so invert the alpha sign.
-        .mul(-1)
-        .alias("alpha")
-    )
 
 
 def build_ten_k_similarity_df(ten_k_df: pl.DataFrame) -> pl.DataFrame:
@@ -35,7 +20,7 @@ def build_ten_k_similarity_df(ten_k_df: pl.DataFrame) -> pl.DataFrame:
             }
         )
 
-    vectorizer = CountVectorizer(
+    vectorizer = TfidfVectorizer(
         lowercase=True,
         token_pattern=r"(?u)\b[a-zA-Z]{2,}\b",
         stop_words="english",
@@ -85,19 +70,16 @@ def build_ten_k_similarity_df(ten_k_df: pl.DataFrame) -> pl.DataFrame:
                 continue
 
             try:
-                counts = vectorizer.fit_transform([doc_1, doc_2]).toarray()
-                counts = counts + 1e-10
-                p = counts[0] / counts[0].sum()
-                q = counts[1] / counts[1].sum()
-                kl = float(np.sum(rel_entr(p, q)))
+                tfidf_matrix = vectorizer.fit_transform([doc_1, doc_2])
+                similarity = float(cosine_similarity(tfidf_matrix[0], tfidf_matrix[1])[0][0])
             except AttributeError:
-                kl = None
+                similarity = None
 
             rows.append(
                 {
                     "cusip": cusip,
                     "filing_date": filing_date,
-                    "ten_k_similarity_value": kl,
+                    "ten_k_similarity_value": similarity,
                 }
             )
 
@@ -225,7 +207,7 @@ def build_ten_k_signal_outputs(
         )
     else:
         ten_k_alpha_df = (
-            ten_k_alphatizer(ten_k_event_df)
+            ic_alphatizer(ten_k_event_df)
             .select("barrid", "date", "alpha")
             .filter(
                 pl.col("alpha").is_not_null(),
